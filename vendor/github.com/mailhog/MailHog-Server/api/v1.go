@@ -332,7 +332,7 @@ func (apiv1 *APIv1) release_one(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	err = smtp.SendMail(cfg.Host+":"+cfg.Port, auth, "nobody@"+apiv1.config.Hostname, []string{cfg.Email}, bytes)
+	err = ModSendMail(cfg.Host+":"+cfg.Port, auth, "nobody@"+apiv1.config.Hostname, []string{cfg.Email}, bytes)
 	if err != nil {
 		log.Printf("Failed to release message: %s", err)
 		w.WriteHeader(500)
@@ -340,6 +340,49 @@ func (apiv1 *APIv1) release_one(w http.ResponseWriter, req *http.Request) {
 	}
 	log.Printf("Message released successfully")
 }
+
+// SendMail from net.smtp modified for no STARTTLS as in https://groups.google.com/forum/#!msg/golang-nuts/W95PXq99uns/Vaez9gyO-BkJ
+func ModSendMail(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+  	c, err := smtp.Dial(addr)
+  	if err != nil {
+  		return err
+  	}
+  	defer c.Close()
+
+  	if ok, _ := c.Extension("STARTTLS"); ok {
+  		// config := &tls.Config{ServerName: "ServerName", InsecureSkipVerify: true}
+  	}
+  	if a != nil {
+//  		if _, ok := c.ext["AUTH"]; ok {
+//  			if err = c.Auth(a); err != nil {
+		if a != nil { 
+				if ok, _ := c.Extension("AUTH"); ok { 
+  				return err
+  			}
+  		}
+  	}
+  	if err = c.Mail(from); err != nil {
+  		return err
+  	}
+  	for _, addr := range to {
+  		if err = c.Rcpt(addr); err != nil {
+  			return err
+  		}
+  	}
+  	w, err := c.Data()
+  	if err != nil {
+  		return err
+  	}
+  	_, err = w.Write(msg)
+  	if err != nil {
+  		return err
+  	}
+  	err = w.Close()
+  	if err != nil {
+  		return err
+  	}
+  	return c.Quit()
+  }
 
 func (apiv1 *APIv1) delete_one(w http.ResponseWriter, req *http.Request) {
 	id := req.URL.Query().Get(":id")
